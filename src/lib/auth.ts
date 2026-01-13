@@ -24,6 +24,7 @@ export class OAuthManager {
     return new Promise((resolve, reject) => {
       const state = crypto.randomBytes(32).toString('base64url');
       let serverClosed = false;
+      const connections = new Set<any>();
 
       // Create HTTP server for callback
       const server = http.createServer(async (req, res) => {
@@ -39,7 +40,7 @@ export class OAuthManager {
               res.writeHead(400, { 'Content-Type': 'text/html' });
               res.end(this.getErrorPage(error, errorDesc || ''));
               reject(new Error(`OAuth error: ${error} - ${errorDesc}`));
-              this.closeServer(server);
+              this.closeServer(server, connections);
               serverClosed = true;
               return;
             }
@@ -48,7 +49,7 @@ export class OAuthManager {
               res.writeHead(400, { 'Content-Type': 'text/html' });
               res.end(this.getErrorPage('Invalid state', 'Possible CSRF attack'));
               reject(new Error('Invalid state parameter'));
-              this.closeServer(server);
+              this.closeServer(server, connections);
               serverClosed = true;
               return;
             }
@@ -57,7 +58,7 @@ export class OAuthManager {
               res.writeHead(400, { 'Content-Type': 'text/html' });
               res.end(this.getErrorPage('No code', 'No authorization code received'));
               reject(new Error('No authorization code received'));
-              this.closeServer(server);
+              this.closeServer(server, connections);
               serverClosed = true;
               return;
             }
@@ -76,23 +77,31 @@ export class OAuthManager {
               );
 
               // Close server after successful exchange
-              this.closeServer(server);
+              this.closeServer(server, connections);
               serverClosed = true;
 
               resolve(result);
             } catch (error) {
               reject(error);
-              this.closeServer(server);
+              this.closeServer(server, connections);
               serverClosed = true;
             }
           } catch (error) {
             res.writeHead(500, { 'Content-Type': 'text/html' });
             res.end(this.getErrorPage('Server Error', (error as Error).message));
             reject(error);
-            this.closeServer(server);
+            this.closeServer(server, connections);
             serverClosed = true;
           }
         }
+      });
+
+      // Track connections so we can force close them
+      server.on('connection', (conn) => {
+        connections.add(conn);
+        conn.on('close', () => {
+          connections.delete(conn);
+        });
       });
 
       server.listen(8080, () => {
@@ -118,7 +127,7 @@ export class OAuthManager {
       // Set timeout
       setTimeout(() => {
         if (!serverClosed) {
-          this.closeServer(server);
+          this.closeServer(server, connections);
           reject(new Error(`OAuth flow timed out after ${OAUTH_TIMEOUT / 1000} seconds`));
         }
       }, OAUTH_TIMEOUT);
@@ -178,7 +187,14 @@ export class OAuthManager {
     }
   }
 
-  private static closeServer(server: http.Server): void {
+  private static closeServer(server: http.Server, connections: Set<any>): void {
+    // Destroy all active connections
+    for (const conn of connections) {
+      conn.destroy();
+    }
+    connections.clear();
+
+    // Close the server
     server.close();
   }
 
