@@ -201,9 +201,12 @@ export class OAuthManager {
         throw new Error('No access token in response');
       }
 
+      // Log the response for debugging
+      console.log(chalk.yellow('\nDebug - Token response:'), JSON.stringify(data, null, 2));
+
       return {
         accessToken: data.access_token,
-        refreshToken: data.refresh_token,
+        refreshToken: data.refresh_token || '', // Default to empty string if not provided
         expiresIn: data.expires_in || 3600,
       };
     } catch (error) {

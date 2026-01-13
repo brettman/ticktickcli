@@ -100,7 +100,8 @@ export class ConfigManager {
   }
 
   static isAuthenticated(config: Config): boolean {
-    return !!(config.auth.accessToken && config.auth.refreshToken);
+    // Only require access token - refresh token is optional
+    return !!config.auth.accessToken;
   }
 
   static isTokenExpired(config: Config): boolean {
