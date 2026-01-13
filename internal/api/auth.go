@@ -1,0 +1,265 @@
+package api
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
+	"net/http"
+	"os/exec"
+	"runtime"
+	"time"
+
+	"golang.org/x/oauth2"
+)
+
+const (
+	// AuthURL is the TickTick OAuth authorization endpoint
+	AuthURL = "https://ticktick.com/oauth/authorize"
+	// TokenURL is the TickTick OAuth token endpoint
+	TokenURL = "https://ticktick.com/oauth/token"
+	// RedirectURL is the local callback URL for OAuth
+	RedirectURL = "http://localhost:8080/callback"
+	// OAuthTimeout is the timeout for the OAuth flow
+	OAuthTimeout = 5 * time.Minute
+)
+
+// OAuthConfig holds OAuth configuration
+type OAuthConfig struct {
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
+	Scopes       []string
+}
+
+// OAuthResult holds the result of an OAuth flow
+type OAuthResult struct {
+	Token        *oauth2.Token
+	ClientID     string
+	ClientSecret string
+}
+
+// StartOAuthFlow initiates the OAuth 2.0 authorization code flow
+func StartOAuthFlow(clientID, clientSecret string) (*OAuthResult, error) {
+	config := &oauth2.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		RedirectURL:  RedirectURL,
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  AuthURL,
+			TokenURL: TokenURL,
+		},
+		Scopes: []string{"tasks:read", "tasks:write"},
+	}
+
+	// Generate random state for CSRF protection
+	state, err := generateRandomState()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate state: %w", err)
+	}
+
+	// Create channels for communication
+	codeChan := make(chan string, 1)
+	errChan := make(chan error, 1)
+
+	// Start local HTTP server for callback
+	server := &http.Server{Addr: ":8080"}
+	http.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+		handleCallback(w, r, state, codeChan, errChan)
+	})
+
+	// Start server in background
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errChan <- fmt.Errorf("failed to start callback server: %w", err)
+		}
+	}()
+
+	// Give server time to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Generate and open authorization URL
+	authURL := config.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	fmt.Printf("Opening browser for authorization...\n")
+	fmt.Printf("If the browser doesn't open, visit this URL:\n%s\n\n", authURL)
+
+	if err := openBrowser(authURL); err != nil {
+		fmt.Printf("Failed to open browser automatically: %v\n", err)
+	}
+
+	// Wait for callback with timeout
+	var code string
+	select {
+	case code = <-codeChan:
+		// Success
+	case err := <-errChan:
+		server.Shutdown(context.Background())
+		return nil, err
+	case <-time.After(OAuthTimeout):
+		server.Shutdown(context.Background())
+		return nil, fmt.Errorf("OAuth flow timed out after %v", OAuthTimeout)
+	}
+
+	// Shutdown server
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	server.Shutdown(ctx)
+
+	// Exchange authorization code for token
+	token, err := config.Exchange(context.Background(), code)
+	if err != nil {
+		return nil, fmt.Errorf("failed to exchange code for token: %w", err)
+	}
+
+	return &OAuthResult{
+		Token:        token,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+	}, nil
+}
+
+// handleCallback handles the OAuth callback request
+func handleCallback(w http.ResponseWriter, r *http.Request, expectedState string, codeChan chan string, errChan chan error) {
+	// Check for errors
+	if errMsg := r.URL.Query().Get("error"); errMsg != "" {
+		errDesc := r.URL.Query().Get("error_description")
+		errChan <- fmt.Errorf("OAuth error: %s - %s", errMsg, errDesc)
+		http.Error(w, "Authorization failed. You can close this window.", http.StatusBadRequest)
+		return
+	}
+
+	// Verify state
+	state := r.URL.Query().Get("state")
+	if state != expectedState {
+		errChan <- fmt.Errorf("invalid state parameter (possible CSRF attack)")
+		http.Error(w, "Invalid state parameter. You can close this window.", http.StatusBadRequest)
+		return
+	}
+
+	// Get authorization code
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		errChan <- fmt.Errorf("no authorization code received")
+		http.Error(w, "No authorization code received. You can close this window.", http.StatusBadRequest)
+		return
+	}
+
+	// Send code to channel
+	codeChan <- code
+
+	// Show success page
+	w.Header().Set("Content-Type", "text/html")
+	fmt.Fprintf(w, `
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<title>TickTick CLI - Authorization Successful</title>
+			<style>
+				body {
+					font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+					display: flex;
+					justify-content: center;
+					align-items: center;
+					height: 100vh;
+					margin: 0;
+					background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%);
+				}
+				.container {
+					background: white;
+					padding: 3rem;
+					border-radius: 10px;
+					box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+					text-align: center;
+				}
+				h1 { color: #667eea; margin-bottom: 1rem; }
+				p { color: #666; margin-bottom: 1.5rem; }
+				.checkmark {
+					width: 80px;
+					height: 80px;
+					border-radius: 50%%;
+					display: block;
+					stroke-width: 2;
+					stroke: #4CAF50;
+					stroke-miterlimit: 10;
+					margin: 0 auto 2rem;
+					box-shadow: inset 0px 0px 0px #4CAF50;
+					animation: fill .4s ease-in-out .4s forwards, scale .3s ease-in-out .9s both;
+				}
+				.checkmark__circle {
+					stroke-dasharray: 166;
+					stroke-dashoffset: 166;
+					stroke-width: 2;
+					stroke-miterlimit: 10;
+					stroke: #4CAF50;
+					fill: none;
+					animation: stroke .6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+				}
+				.checkmark__check {
+					transform-origin: 50%% 50%%;
+					stroke-dasharray: 48;
+					stroke-dashoffset: 48;
+					animation: stroke .3s cubic-bezier(0.65, 0, 0.45, 1) .8s forwards;
+				}
+				@keyframes stroke {
+					100%% { stroke-dashoffset: 0; }
+				}
+				@keyframes fill {
+					100%% { box-shadow: inset 0px 0px 0px 30px #4CAF50; }
+				}
+			</style>
+		</head>
+		<body>
+			<div class="container">
+				<svg class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
+					<circle class="checkmark__circle" cx="26" cy="26" r="25" fill="none"/>
+					<path class="checkmark__check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+				</svg>
+				<h1>Authorization Successful!</h1>
+				<p>You have successfully authorized the TickTick CLI.</p>
+				<p>You can now close this window and return to your terminal.</p>
+			</div>
+		</body>
+		</html>
+	`)
+}
+
+// generateRandomState generates a random state string for CSRF protection
+func generateRandomState() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(b), nil
+}
+
+// openBrowser opens the default browser to the given URL
+func openBrowser(url string) error {
+	var cmd string
+	var args []string
+
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = "open"
+		args = []string{url}
+	case "linux":
+		cmd = "xdg-open"
+		args = []string{url}
+	case "windows":
+		cmd = "cmd"
+		args = []string{"/c", "start", url}
+	default:
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+
+	return exec.Command(cmd, args...).Start()
+}
+
+// RefreshToken refreshes an expired OAuth token
+func RefreshToken(ctx context.Context, config *oauth2.Config, token *oauth2.Token) (*oauth2.Token, error) {
+	tokenSource := config.TokenSource(ctx, token)
+	newToken, err := tokenSource.Token()
+	if err != nil {
+		return nil, fmt.Errorf("failed to refresh token: %w", err)
+	}
+	return newToken, nil
+}
