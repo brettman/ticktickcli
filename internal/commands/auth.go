@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bretthardman/ticktickcli/internal/api"
-	"github.com/bretthardman/ticktickcli/internal/config"
+	"github.com/brettman/ticktickcli/internal/api"
+	"github.com/brettman/ticktickcli/internal/config"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )

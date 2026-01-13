@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/bretthardman/ticktickcli/internal/commands"
+	"github.com/brettman/ticktickcli/internal/commands"
 	"github.com/spf13/cobra"
 )
 

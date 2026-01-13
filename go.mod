@@ -1,4 +1,4 @@
-module github.com/bretthardman/ticktickcli
+module github.com/brettman/ticktickcli
 
 go 1.24.1
 

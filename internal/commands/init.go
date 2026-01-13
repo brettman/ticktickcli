@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bretthardman/ticktickcli/internal/api"
-	"github.com/bretthardman/ticktickcli/internal/config"
-	"github.com/bretthardman/ticktickcli/internal/project"
+	"github.com/brettman/ticktickcli/internal/api"
+	"github.com/brettman/ticktickcli/internal/config"
+	"github.com/brettman/ticktickcli/internal/project"
 	"github.com/fatih/color"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
