@@ -37,34 +37,52 @@ export class OAuthManager {
 
             if (error) {
               const errorDesc = url.searchParams.get('error_description');
-              res.writeHead(400, { 'Content-Type': 'text/html' });
+              res.writeHead(400, {
+                'Content-Type': 'text/html',
+                'Connection': 'close',
+              });
               res.end(this.getErrorPage(error, errorDesc || ''));
               reject(new Error(`OAuth error: ${error} - ${errorDesc}`));
-              this.closeServer(server, connections);
-              serverClosed = true;
+              setTimeout(() => {
+                this.closeServer(server, connections);
+                serverClosed = true;
+              }, 100);
               return;
             }
 
             if (returnedState !== state) {
-              res.writeHead(400, { 'Content-Type': 'text/html' });
+              res.writeHead(400, {
+                'Content-Type': 'text/html',
+                'Connection': 'close',
+              });
               res.end(this.getErrorPage('Invalid state', 'Possible CSRF attack'));
               reject(new Error('Invalid state parameter'));
-              this.closeServer(server, connections);
-              serverClosed = true;
+              setTimeout(() => {
+                this.closeServer(server, connections);
+                serverClosed = true;
+              }, 100);
               return;
             }
 
             if (!code) {
-              res.writeHead(400, { 'Content-Type': 'text/html' });
+              res.writeHead(400, {
+                'Content-Type': 'text/html',
+                'Connection': 'close',
+              });
               res.end(this.getErrorPage('No code', 'No authorization code received'));
               reject(new Error('No authorization code received'));
-              this.closeServer(server, connections);
-              serverClosed = true;
+              setTimeout(() => {
+                this.closeServer(server, connections);
+                serverClosed = true;
+              }, 100);
               return;
             }
 
-            // Show success page
-            res.writeHead(200, { 'Content-Type': 'text/html' });
+            // Show success page with Connection: close header
+            res.writeHead(200, {
+              'Content-Type': 'text/html',
+              'Connection': 'close',
+            });
             res.end(this.getSuccessPage());
 
             // Exchange code for token
@@ -76,9 +94,11 @@ export class OAuthManager {
                 code
               );
 
-              // Close server after successful exchange
-              this.closeServer(server, connections);
-              serverClosed = true;
+              // Give browser a moment to receive the response, then close
+              setTimeout(() => {
+                this.closeServer(server, connections);
+                serverClosed = true;
+              }, 100);
 
               resolve(result);
             } catch (error) {
@@ -87,14 +107,23 @@ export class OAuthManager {
               serverClosed = true;
             }
           } catch (error) {
-            res.writeHead(500, { 'Content-Type': 'text/html' });
+            res.writeHead(500, {
+              'Content-Type': 'text/html',
+              'Connection': 'close',
+            });
             res.end(this.getErrorPage('Server Error', (error as Error).message));
             reject(error);
-            this.closeServer(server, connections);
-            serverClosed = true;
+            setTimeout(() => {
+              this.closeServer(server, connections);
+              serverClosed = true;
+            }, 100);
           }
         }
       });
+
+      // Configure server to close connections quickly
+      server.keepAliveTimeout = 1;
+      server.headersTimeout = 1;
 
       // Track connections so we can force close them
       server.on('connection', (conn) => {

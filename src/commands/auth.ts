@@ -76,6 +76,9 @@ authCommand
       console.log(chalk.green.bold('\n✓ Authentication successful!'));
       console.log(`Credentials saved to ~/.ticktick/config`);
       console.log(`Token expires: ${expiry.toLocaleString()}`);
+
+      // Force exit to ensure process closes
+      setTimeout(() => process.exit(0), 100);
     } catch (error) {
       console.error(chalk.red('Authentication failed:'), (error as Error).message);
       process.exit(1);
