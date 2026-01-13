@@ -2,11 +2,13 @@ package commands
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/brettman/ticktickcli/internal/api"
 	"github.com/brettman/ticktickcli/internal/config"
 	"github.com/fatih/color"
+	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
@@ -78,9 +80,22 @@ func newAuthLogoutCmd() *cobra.Command {
 
 // runAuthLogin handles the login flow
 func runAuthLogin(clientID, clientSecret string) error {
-	// Prompt for credentials if not provided
+	// Try to load .env file (silently ignore if it doesn't exist)
+	_ = godotenv.Load()
+
+	// Priority order: flags > environment variables > prompts
 	if clientID == "" {
-		fmt.Print("Enter Client ID: ")
+		clientID = os.Getenv("TICKTICK_CLIENT_ID")
+	}
+	if clientSecret == "" {
+		clientSecret = os.Getenv("TICKTICK_CLIENT_SECRET")
+	}
+
+	// Prompt for credentials if still not provided
+	if clientID == "" {
+		cyan := color.New(color.FgCyan)
+		cyan.Println("\nTip: You can create a .env file with TICKTICK_CLIENT_ID and TICKTICK_CLIENT_SECRET to avoid entering these each time.")
+		fmt.Print("\nEnter Client ID: ")
 		fmt.Scanln(&clientID)
 	}
 	if clientSecret == "" {

@@ -35,6 +35,7 @@ vendor/
 # Local config (should not be committed)
 /.ticktick
 /test-config.json
+.env
 
 # Session state
 SESSION_STATE.md
