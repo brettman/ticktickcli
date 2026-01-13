@@ -62,11 +62,17 @@ func StartOAuthFlow(clientID, clientSecret string) (*OAuthResult, error) {
 	codeChan := make(chan string, 1)
 	errChan := make(chan error, 1)
 
-	// Start local HTTP server for callback
-	server := &http.Server{Addr: ":8080"}
-	http.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+	// Create a new ServeMux for this OAuth flow
+	mux := http.NewServeMux()
+	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 		handleCallback(w, r, state, codeChan, errChan)
 	})
+
+	// Start local HTTP server for callback
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: mux,
+	}
 
 	// Start server in background
 	go func() {
@@ -91,19 +97,26 @@ func StartOAuthFlow(clientID, clientSecret string) (*OAuthResult, error) {
 	var code string
 	select {
 	case code = <-codeChan:
-		// Success
+		// Success - continue to shutdown
 	case err := <-errChan:
-		server.Shutdown(context.Background())
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer shutdownCancel()
+		server.Shutdown(shutdownCtx)
 		return nil, err
 	case <-time.After(OAuthTimeout):
-		server.Shutdown(context.Background())
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer shutdownCancel()
+		server.Shutdown(shutdownCtx)
 		return nil, fmt.Errorf("OAuth flow timed out after %v", OAuthTimeout)
 	}
 
-	// Shutdown server
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	server.Shutdown(ctx)
+	// Shutdown server gracefully
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer shutdownCancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		// Force close if graceful shutdown fails
+		server.Close()
+	}
 
 	// Exchange authorization code for token
 	token, err := config.Exchange(context.Background(), code)
