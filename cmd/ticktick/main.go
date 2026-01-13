@@ -28,6 +28,12 @@ with AI assistants via the MCP server.`,
 	// Add commands
 	rootCmd.AddCommand(commands.NewAuthCmd())
 	rootCmd.AddCommand(commands.NewInitCmd())
+	rootCmd.AddCommand(commands.NewAddCmd())
+	rootCmd.AddCommand(commands.NewListCmd())
+	rootCmd.AddCommand(commands.NewCompleteCmd())
+	rootCmd.AddCommand(commands.NewDeleteCmd())
+	rootCmd.AddCommand(commands.NewShowCmd())
+	rootCmd.AddCommand(commands.NewProjectsCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
