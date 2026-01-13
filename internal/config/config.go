@@ -139,7 +139,7 @@ func (c *Config) Save() error {
 
 // IsAuthenticated checks if the user has valid authentication credentials
 func (c *Config) IsAuthenticated() bool {
-	return c.Auth.AccessToken != "" && c.Auth.RefreshToken != ""
+	return c.Auth.AccessToken != ""
 }
 
 // IsTokenExpired checks if the access token is expired

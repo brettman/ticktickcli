@@ -1,10 +1,18 @@
-# Binaries
+# Binaries (Go - legacy)
 /ticktick
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+
+# Node.js
+node_modules/
+dist/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # Test binary, built with `go test -c`
 *.test

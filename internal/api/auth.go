@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"runtime"
 	"time"
@@ -46,8 +48,9 @@ func StartOAuthFlow(clientID, clientSecret string) (*OAuthResult, error) {
 		ClientSecret: clientSecret,
 		RedirectURL:  RedirectURL,
 		Endpoint: oauth2.Endpoint{
-			AuthURL:  AuthURL,
-			TokenURL: TokenURL,
+			AuthURL:   AuthURL,
+			TokenURL:  TokenURL,
+			AuthStyle: oauth2.AuthStyleInParams, // TickTick requires credentials in request body
 		},
 		Scopes: []string{"tasks:read", "tasks:write"},
 	}
@@ -97,29 +100,23 @@ func StartOAuthFlow(clientID, clientSecret string) (*OAuthResult, error) {
 	var code string
 	select {
 	case code = <-codeChan:
-		// Success - continue to shutdown
+		// Success - give browser time to receive the response page
+		time.Sleep(500 * time.Millisecond)
 	case err := <-errChan:
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer shutdownCancel()
-		server.Shutdown(shutdownCtx)
+		server.Close()
 		return nil, err
 	case <-time.After(OAuthTimeout):
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer shutdownCancel()
-		server.Shutdown(shutdownCtx)
+		server.Close()
 		return nil, fmt.Errorf("OAuth flow timed out after %v", OAuthTimeout)
 	}
 
-	// Shutdown server gracefully
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer shutdownCancel()
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		// Force close if graceful shutdown fails
-		server.Close()
-	}
-
-	// Exchange authorization code for token
-	token, err := config.Exchange(context.Background(), code)
+	// Exchange authorization code for token manually (not using oauth2 library)
+	fmt.Println("\nExchanging authorization code for access token...")
+	
+	token, err := exchangeCodeForToken(clientID, clientSecret, code)
+	
+	// Now close the server after token exchange completes
+	server.Close()
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange code for token: %w", err)
 	}
@@ -265,6 +262,70 @@ func openBrowser(url string) error {
 	}
 
 	return exec.Command(cmd, args...).Start()
+}
+
+// exchangeCodeForToken manually exchanges authorization code for access token
+func exchangeCodeForToken(clientID, clientSecret, code string) (*oauth2.Token, error) {
+	// Use curl as a workaround since Go's HTTP client is timing out
+	// but curl works fine
+	args := []string{
+		"-s", "-S", // silent but show errors
+		"-X", "POST",
+		"-H", "Content-Type: application/x-www-form-urlencoded",
+		"-H", "Accept: application/json",
+		"-d", fmt.Sprintf("grant_type=authorization_code&code=%s&client_id=%s&client_secret=%s&redirect_uri=%s",
+			url.QueryEscape(code),
+			url.QueryEscape(clientID),
+			url.QueryEscape(clientSecret),
+			url.QueryEscape(RedirectURL)),
+		"--max-time", "30",
+		TokenURL,
+	}
+
+	cmd := exec.Command("curl", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("curl failed: %s", string(exitErr.Stderr))
+		}
+		return nil, fmt.Errorf("curl failed: %w", err)
+	}
+
+	// Parse token response
+	var tokenResp struct {
+		AccessToken  string `json:"access_token"`
+		TokenType    string `json:"token_type"`
+		ExpiresIn    int    `json:"expires_in"`
+		RefreshToken string `json:"refresh_token"`
+		Scope        string `json:"scope"`
+		Error        string `json:"error"`
+		ErrorDesc    string `json:"error_description"`
+	}
+
+	if err := json.Unmarshal(output, &tokenResp); err != nil {
+		return nil, fmt.Errorf("failed to parse token response: %w (body: %s)", err, string(output))
+	}
+
+	if tokenResp.Error != "" {
+		return nil, fmt.Errorf("OAuth error: %s - %s", tokenResp.Error, tokenResp.ErrorDesc)
+	}
+
+	if tokenResp.AccessToken == "" {
+		return nil, fmt.Errorf("no access token in response: %s", string(output))
+	}
+
+	// Create oauth2.Token
+	token := &oauth2.Token{
+		AccessToken:  tokenResp.AccessToken,
+		TokenType:    tokenResp.TokenType,
+		RefreshToken: tokenResp.RefreshToken,
+	}
+
+	if tokenResp.ExpiresIn > 0 {
+		token.Expiry = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+	}
+
+	return token, nil
 }
 
 // RefreshToken refreshes an expired OAuth token
