@@ -62,8 +62,17 @@ export class TickTickClient {
   // Task operations
   async getTasks(projectId: string): Promise<Task[]> {
     try {
-      const response = await this.client.get<Task[]>(`/project/${projectId}/data`);
-      return response.data;
+      const response = await this.client.get(`/project/${projectId}/data`);
+      // TickTick API returns tasks in an object with 'tasks' property
+      const data = response.data;
+      if (Array.isArray(data)) {
+        return data;
+      } else if (data && Array.isArray(data.tasks)) {
+        return data.tasks;
+      } else {
+        console.error('Unexpected response format:', data);
+        return [];
+      }
     } catch (error) {
       throw this.handleError(error);
     }
