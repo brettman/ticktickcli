@@ -3,8 +3,11 @@
 import { Command } from 'commander';
 import { authCommand } from './commands/auth.js';
 import { initCommand } from './commands/init.js';
+import { switchCommand } from './commands/switch.js';
 import { addCommand } from './commands/add.js';
 import { listCommand } from './commands/list.js';
+import { searchCommand } from './commands/search.js';
+import { updateCommand } from './commands/update.js';
 import { completeCommand } from './commands/complete.js';
 import { deleteCommand } from './commands/delete.js';
 import { showCommand } from './commands/show.js';
@@ -20,8 +23,11 @@ program
 // Register commands
 program.addCommand(authCommand);
 program.addCommand(initCommand);
+program.addCommand(switchCommand);
 program.addCommand(addCommand);
 program.addCommand(listCommand);
+program.addCommand(searchCommand);
+program.addCommand(updateCommand);
 program.addCommand(completeCommand);
 program.addCommand(deleteCommand);
 program.addCommand(showCommand);

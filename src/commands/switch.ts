@@ -6,30 +6,24 @@ import { ConfigManager } from '../lib/config.js';
 import { ProjectManager } from '../lib/project.js';
 import { TickTickClient } from '../lib/api-client.js';
 
-export const initCommand = new Command('init')
-  .description('Initialize a project with TickTick')
-  .option('--project-id <id>', 'Link to existing project by ID')
-  .option('--create <name>', 'Create new project with this name')
-  .option('-f, --force', 'Overwrite existing .ticktick file')
+export const switchCommand = new Command('switch')
+  .description('Switch to a different project')
+  .option('--project-id <id>', 'Switch to project by ID')
   .action(async (options) => {
     try {
       const cwd = process.cwd();
 
-      // Check if .ticktick already exists
-      if (await ProjectManager.hasTickTickFile(cwd)) {
-        if (!options.force) {
-          console.log(chalk.yellow('.ticktick file already exists in this directory.'));
-          console.log('Use --force to switch to a different project.\n');
+      // Check if .ticktick exists
+      if (!await ProjectManager.hasTickTickFile(cwd)) {
+        console.log(chalk.yellow('No .ticktick file found in this directory.'));
+        console.log('Run \'ticktick init\' first to initialize a project.');
+        process.exit(1);
+      }
 
-          // Show current project
-          const ctx = await ProjectManager.getCurrentProjectContext();
-          if (ctx) {
-            console.log(`Current project: ${chalk.cyan(ctx.file.projectName)} (ID: ${ctx.file.projectId})`);
-          }
-          process.exit(1);
-        } else {
-          console.log(chalk.yellow('Overwriting existing .ticktick file...\n'));
-        }
+      // Show current project
+      const currentCtx = await ProjectManager.getCurrentProjectContext();
+      if (currentCtx) {
+        console.log(`Current project: ${chalk.cyan(currentCtx.file.projectName)} (ID: ${currentCtx.file.projectId})\n`);
       }
 
       // Load config and check auth
@@ -43,13 +37,8 @@ export const initCommand = new Command('init')
 
       let selectedProject;
 
-      if (options.create) {
-        // Create new project
-        console.log(`Creating new project: ${options.create}`);
-        selectedProject = await client.createProject({ name: options.create });
-        console.log(chalk.green(`✓ Created project: ${selectedProject.name}`));
-      } else if (options.projectId) {
-        // Link to existing project by ID
+      if (options.projectId) {
+        // Switch to specific project by ID
         console.log(`Fetching project: ${options.projectId}`);
         selectedProject = await client.getProject(options.projectId);
       } else {
@@ -59,14 +48,14 @@ export const initCommand = new Command('init')
         const activeProjects = projects.filter(p => !p.closed);
 
         if (activeProjects.length === 0) {
-          throw new Error('No active projects found. Create one with --create flag');
+          throw new Error('No active projects found.');
         }
 
         const { project } = await inquirer.prompt([
           {
             type: 'list',
             name: 'project',
-            message: 'Select a project to link:',
+            message: 'Select a project to switch to:',
             choices: activeProjects.map(p => ({
               name: p.name,
               value: p,
@@ -77,7 +66,7 @@ export const initCommand = new Command('init')
         selectedProject = project;
       }
 
-      // Create .ticktick file
+      // Update .ticktick file
       const absPath = path.resolve(cwd);
       const ttFile = ProjectManager.createTickTickFile(
         selectedProject.id,
@@ -87,12 +76,9 @@ export const initCommand = new Command('init')
 
       await ProjectManager.save(cwd, ttFile);
 
-      console.log(chalk.green.bold('\n✓ Project initialized successfully!'));
-      console.log(`\nProject: ${selectedProject.name} (ID: ${selectedProject.id})`);
+      console.log(chalk.green.bold('\n✓ Successfully switched project!'));
+      console.log(`\nNew project: ${chalk.cyan(selectedProject.name)} (ID: ${selectedProject.id})`);
       console.log(`Directory: ${absPath}`);
-      console.log('\nYou can now use project-aware commands like:');
-      console.log('  ticktick add "My task"');
-      console.log('  ticktick list');
     } catch (error) {
       console.error(chalk.red('Error:'), (error as Error).message);
       process.exit(1);

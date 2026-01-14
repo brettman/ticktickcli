@@ -1,24 +1,21 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
+import inquirer from 'inquirer';
 import { ConfigManager } from '../lib/config.js';
 import { ProjectManager } from '../lib/project.js';
 import { TickTickClient } from '../lib/api-client.js';
 
 export const addCommand = new Command('add')
   .description('Add a new task')
-  .argument('<title>', 'Task title')
-  .option('--content <text>', 'Task description/content')
+  .argument('[title]', 'Task title (interactive mode if not provided)')
+  .option('--desc <text>', 'Task description/content (alias: --content)')
+  .option('--content <text>', 'Task description/content (alias: --desc)')
   .option('--due <date>', 'Due date (YYYY-MM-DD)')
   .option('--priority <number>', 'Priority (0-5)', parseInt)
   .option('--tags <tags>', 'Task tags (comma-separated)')
   .option('--project <id>', 'Project ID (overrides .ticktick file)')
   .action(async (title, options) => {
     try {
-      // Validate priority
-      if (options.priority !== undefined && (options.priority < 0 || options.priority > 5)) {
-        throw new Error('Priority must be between 0 and 5');
-      }
-
       // Load config
       const config = await ConfigManager.load();
       if (!ConfigManager.isAuthenticated(config)) {
@@ -43,19 +40,79 @@ export const addCommand = new Command('add')
         }
       }
 
+      // Interactive mode if no title provided
+      let taskTitle = title;
+      let content = options.desc || options.content;
+      let priority = options.priority;
+      let dueDate = options.due;
+      let tags: string[] | undefined = options.tags ? options.tags.split(',').map((t: string) => t.trim()) : undefined;
+
+      if (!taskTitle) {
+        console.log(chalk.cyan('\n📝 Create a new task (interactive mode)\n'));
+
+        const answers = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'title',
+            message: 'Task title:',
+            validate: (input: string) => input.trim().length > 0 || 'Title is required',
+          },
+          {
+            type: 'input',
+            name: 'content',
+            message: 'Description (optional):',
+          },
+          {
+            type: 'list',
+            name: 'priority',
+            message: 'Priority:',
+            choices: [
+              { name: 'None', value: 0 },
+              { name: 'Low', value: 1 },
+              { name: 'Medium', value: 3 },
+              { name: 'High', value: 5 },
+            ],
+            default: 0,
+          },
+          {
+            type: 'input',
+            name: 'dueDate',
+            message: 'Due date (YYYY-MM-DD, optional):',
+            validate: (input: string) => {
+              if (!input) return true;
+              const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+              return dateRegex.test(input) || 'Date must be in YYYY-MM-DD format';
+            },
+          },
+          {
+            type: 'input',
+            name: 'tags',
+            message: 'Tags (comma-separated, optional):',
+          },
+        ]);
+
+        taskTitle = answers.title;
+        content = answers.content || undefined;
+        priority = answers.priority;
+        dueDate = answers.dueDate || undefined;
+        tags = answers.tags ? answers.tags.split(',').map((t: string) => t.trim()).filter(Boolean) : undefined;
+      }
+
+      // Validate priority
+      if (priority !== undefined && (priority < 0 || priority > 5)) {
+        throw new Error('Priority must be between 0 and 5');
+      }
+
       // Create API client
       const client = new TickTickClient(config.auth.accessToken);
 
-      // Parse tags
-      const tags = options.tags ? options.tags.split(',').map((t: string) => t.trim()) : undefined;
-
       // Create task
       const task = await client.createTask({
-        title,
+        title: taskTitle,
         projectId,
-        content: options.content,
-        dueDate: options.due,
-        priority: options.priority,
+        content,
+        dueDate,
+        priority,
         tags,
       });
 

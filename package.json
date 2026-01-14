@@ -7,19 +7,35 @@
   "bin": {
     "ticktick": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brettman/ticktickcli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/brettman/ticktickcli/issues"
+  },
+  "homepage": "https://github.com/brettman/ticktickcli#readme",
   "keywords": [
     "ticktick",
     "cli",
     "tasks",
     "todo",
     "productivity",
-    "mcp"
+    "mcp",
+    "ai",
+    "task-management"
   ],
   "author": "Brett Hardman",
   "license": "MIT",

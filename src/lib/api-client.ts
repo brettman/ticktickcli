@@ -35,8 +35,23 @@ export class TickTickClient {
 
   async getProject(id: string): Promise<Project> {
     try {
-      const response = await this.client.get<Project>(`/project/${id}`);
-      return response.data;
+      // TickTick API doesn't support fetching individual projects
+      // So we fetch all projects and filter by ID
+      const projects = await this.getProjects();
+
+      // Try exact match first
+      let project = projects.find((p) => p.id === id);
+
+      // If not found and ID looks like a short ID, try partial match
+      if (!project && id.length <= 12) {
+        project = projects.find((p) => p.id.startsWith(id));
+      }
+
+      if (!project) {
+        throw new Error(`Project not found: ${id}`);
+      }
+
+      return project;
     } catch (error) {
       throw this.handleError(error);
     }
@@ -104,9 +119,24 @@ export class TickTickClient {
     req: UpdateTaskRequest
   ): Promise<Task> {
     try {
+      // TickTick API requires the full task object for updates, not just changed fields
+      // First get the current task, then merge changes
+      const currentTask = await this.findTaskById(projectId, taskId);
+      if (!currentTask) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      // Merge the update into the current task
+      const updatePayload = {
+        ...currentTask,
+        ...req,
+        id: currentTask.id,
+        projectId: currentTask.projectId,
+      };
+
       const response = await this.client.post<Task>(
-        `/project/${projectId}/task/${taskId}`,
-        req
+        `/task/${currentTask.id}`,
+        updatePayload
       );
       return response.data;
     } catch (error) {
@@ -132,18 +162,19 @@ export class TickTickClient {
 
   // Helper to find task by short or full ID
   async findTaskById(projectId: string, taskId: string): Promise<Task | null> {
-    // First try as full ID
-    try {
-      return await this.getTask(projectId, taskId);
-    } catch {
-      // If that fails and it's a short ID, search through all tasks
-      if (taskId.length <= 8) {
-        const tasks = await this.getTasks(projectId);
-        const found = tasks.find((t) => t.id.startsWith(taskId));
-        return found || null;
-      }
-      return null;
+    // TickTick API doesn't support fetching individual tasks by ID
+    // So we always search through all tasks
+    const tasks = await this.getTasks(projectId);
+
+    // Try exact match first
+    let found = tasks.find((t) => t.id === taskId);
+
+    // If not found and it's a short ID, try partial match
+    if (!found && taskId.length <= 12) {
+      found = tasks.find((t) => t.id.startsWith(taskId));
     }
+
+    return found || null;
   }
 
   // Error handling
