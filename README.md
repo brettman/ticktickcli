@@ -336,6 +336,60 @@ The CLI is designed around a project-based workflow:
 
 5. The CLI **searches up the directory tree** for `.ticktick` files, so subdirectories inherit the project context
 
+## Global Default Project
+
+Set a default project to use from anywhere on your machine, even without a `.ticktick` file:
+
+**Set default project** (interactive mode - shows list of projects):
+```bash
+ticktick config default set
+```
+
+**Set default project** (direct mode - using project ID):
+```bash
+ticktick config default set 685bbc9b
+```
+
+**View default project**:
+```bash
+ticktick config default show
+```
+
+**Clear default project**:
+```bash
+ticktick config default clear
+```
+
+**View all configuration**:
+```bash
+ticktick config show
+```
+
+### How Project Resolution Works
+
+When you run a command, the CLI determines which project to use in this order:
+
+1. **Explicit `--project <id>` flag** (highest priority)
+   ```bash
+   ticktick list --project abc12345
+   ```
+
+2. **Local `.ticktick` file** in current or parent directory
+   ```bash
+   cd ~/my-project  # Has .ticktick file
+   ticktick list    # Uses project from .ticktick
+   ```
+
+3. **Global default project** from `~/.ticktick/config`
+   ```bash
+   cd /tmp          # No .ticktick file
+   ticktick list    # Uses global default
+   ```
+
+4. **Error** if none of the above are available
+
+This means you can work from anywhere on your machine while maintaining project-specific contexts in your working directories.
+
 ## Configuration
 
 Configuration is stored in `~/.ticktick/config`:
@@ -354,10 +408,13 @@ Configuration is stored in `~/.ticktick/config`:
     "dateFormat": "YYYY-MM-DD",
     "timeFormat": "24h",
     "defaultPriority": 0,
-    "colorOutput": true
+    "colorOutput": true,
+    "defaultProject": "685bbc9b..."
   }
 }
 ```
+
+You can view your configuration with `ticktick config show` and manage the default project with the `ticktick config default` commands (see [Global Default Project](#global-default-project)).
 
 ## Development
 

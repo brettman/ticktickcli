@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import { authCommand } from './commands/auth.js';
+import { configCommand } from './commands/config.js';
 import { initCommand } from './commands/init.js';
 import { switchCommand } from './commands/switch.js';
 import { addCommand } from './commands/add.js';
@@ -22,6 +23,7 @@ program
 
 // Register commands
 program.addCommand(authCommand);
+program.addCommand(configCommand);
 program.addCommand(initCommand);
 program.addCommand(switchCommand);
 program.addCommand(addCommand);

@@ -19,6 +19,8 @@ Both components share code and configuration, enabling seamless task management 
 - **Shared State**: Both read/write `.ticktick` files in project folders and `~/.ticktick/config`
 
 **Key Design Principles:**
+- Three-tier project resolution: explicit `--project` flag > local `.ticktick` file > global default project
+- Global default project enables CLI use from any directory (set via `ticktick config default set`)
 - Project folders contain `.ticktick` files linking them to TickTick projects
 - CLI is context-aware: auto-detects `.ticktick` in current/parent directories
 - MCP server exposes 9 tools for AI assistants
@@ -92,36 +94,60 @@ Both components share code and configuration, enabling seamless task management 
 
 ### Building and Testing
 
-**CLI:**
+**First-time Setup:**
 ```bash
-# Development
+# Install dependencies for both CLI and MCP server
+npm install
+cd mcp-server && npm install && cd ..
+
+# Build both components
+npm run build
+cd mcp-server && npm run build && cd ..
+
+# Optional: Install CLI globally
+npm link
+```
+
+**CLI Development:**
+```bash
+# Development mode (with tsx for auto-reload)
 npm run dev -- <command>
 
-# Build
+# Build CLI only
 npm run build
-
-# Global install
-npm link
-ticktick <command>
 
 # Test commands
 ticktick auth status
+ticktick config show
+ticktick config default set        # Set global default project interactively
 ticktick list
 ticktick add "Test task"
 ticktick search "keyword"
 ```
 
-**MCP Server:**
+**MCP Server Development:**
 ```bash
 cd mcp-server
-npm install
+
+# Development mode
+npm run dev
+
+# Build MCP server only
 npm run build
 
-# Configure Claude Desktop
+# Configure Claude Desktop (one-time)
 ./install-claude-desktop.sh
 
 # Test in Claude Desktop
-(Restart Claude Desktop and use natural language)
+# (Restart Claude Desktop and use natural language)
+```
+
+**Clean Build:**
+```bash
+# Clean and rebuild everything
+npm run clean
+npm run build
+cd mcp-server && npm run clean && npm run build && cd ..
 ```
 
 ### Adding New CLI Commands
@@ -133,10 +159,14 @@ npm run build
 
 ### Adding New MCP Tools
 
-1. Add tool definition to `TOOLS` array in `mcp-server/src/index.ts`
-2. Add handler in `CallToolRequestSchema` switch statement
-3. Update `mcp-server/README.md` with tool documentation
-4. Test with Claude Desktop
+1. Add tool definition to `TOOLS` array in `mcp-server/src/index.ts` with:
+   - `name`: Unique tool identifier (snake_case)
+   - `description`: What the tool does (for AI to understand when to use it)
+   - `inputSchema`: JSON Schema for parameters (required/optional fields)
+2. Add handler case in `CallToolRequestSchema` switch statement
+3. Return results as `{ content: [{ type: 'text', text: '...' }] }`
+4. Update `mcp-server/README.md` with tool documentation and examples
+5. Test with Claude Desktop: restart app and verify tool appears in conversation
 
 ### TickTick API Integration
 
@@ -151,6 +181,22 @@ npm run build
 
 ## Development Notes
 
+### Project Structure
+
+This is a **monorepo with two separate Node.js projects**:
+
+1. **Root project** (`/package.json`): CLI tool
+   - Dependencies: `commander`, `inquirer`, `chalk`, `cli-table3`, `axios`, `simple-oauth2`, `open`
+   - Executable: `ticktick` command (in `bin` field)
+   - Entry point: `dist/index.js`
+
+2. **MCP Server** (`/mcp-server/package.json`): AI integration
+   - Dependencies: `@modelcontextprotocol/sdk`, `axios`, `dotenv`
+   - Executable: `ticktick-mcp` command
+   - Entry point: `dist/index.js`
+
+**Important**: Each project has its own `package.json` and `node_modules`. When installing dependencies or building, you must run commands in both locations.
+
 ### Shared Code Architecture
 
 The CLI and MCP server share code via symbolic links:
@@ -160,24 +206,48 @@ The CLI and MCP server share code via symbolic links:
 **When modifying shared code:**
 - Changes to `src/lib/*` affect both CLI and MCP server
 - Changes to `src/types/*` affect both CLI and MCP server
-- Rebuild both after changes: `npm run build` in root and `mcp-server/`
+- Must rebuild both after changes: `npm run build` in root AND `cd mcp-server && npm run build`
+- Shared code includes: API client, config manager, project manager, auth flow, type definitions
+
+**When adding dependencies:**
+- CLI dependencies: `npm install <package>` in root
+- MCP dependencies: `cd mcp-server && npm install <package>`
+- If shared code needs it: install in BOTH projects
 
 ### Key Implementation Details
 
 **API Client (`src/lib/api-client.ts`):**
-- `getProject()` - Fetches all projects, filters by ID (API limitation)
-- `findTaskById()` - Fetches all tasks, supports short ID matching
-- `updateTask()` - Fetches full task, merges changes, sends complete object
+- `TickTickClient` class wraps axios with Bearer token auth
+- `getProject(id)` - Fetches all projects, filters by ID (API limitation - no individual fetch endpoint)
+- `findTaskById(id)` - Fetches all tasks, supports short ID matching (first 8-12 chars)
+- `updateTask()` - Must fetch full task first, merge changes, then PUT complete object
+- All methods include error handling that wraps axios errors with context
 
 **Project Detection (`src/lib/project.ts`):**
-- `getCurrentProjectContext()` - Traverses directory tree upward
-- Finds nearest `.ticktick` file
-- Used by both CLI and MCP for context-awareness
+- `ProjectManager.getCurrentProjectContext()` - Traverses directory tree upward from cwd
+- Finds nearest `.ticktick` file (stops at first match or filesystem root)
+- `load()` validates `.ticktick` file format and returns parsed data
+- Used by both CLI and MCP for automatic project context
+
+**Config Management (`src/lib/config.ts`):**
+- `ConfigManager` handles `~/.ticktick/config` file
+- Stores OAuth tokens, preferences, and cache settings
+- `ensureAuthenticated()` checks token validity and expiry
+- Auto-creates config directory on first use
 
 **OAuth Flow (`src/lib/auth.ts`):**
-- Creates HTTP server on port 8080
-- Tracks all connections to force-close them
-- Uses 100ms delay + process.exit(0) to prevent hanging
+- Creates temporary HTTP server on port 8080 for OAuth callback
+- Tracks all socket connections to force-close them after success
+- Uses 100ms delay + process.exit(0) to prevent process hanging
+- Opens browser automatically with `open` package
+
+**MCP Server (`mcp-server/src/index.ts`):**
+- Implements Model Context Protocol using `@modelcontextprotocol/sdk`
+- Uses `StdioServerTransport` for communication with Claude Desktop
+- Exposes 9 tools: `create_task`, `list_tasks`, `search_tasks`, `get_task`, `update_task`, `complete_task`, `delete_task`, `list_projects`, `init_project`
+- Each tool handler returns `{ content: [{ type: 'text', text: result }] }` format
+- Reads working directory from process.cwd() for project context detection
+- Shares same config file (`~/.ticktick/config`) as CLI for auth
 
 ### Interactive Mode Pattern
 
@@ -190,14 +260,19 @@ Both `add` and `update` commands support interactive mode:
 ### Testing Checklist
 
 Before pushing changes:
-- [ ] CLI builds: `npm run build`
-- [ ] MCP server builds: `cd mcp-server && npm run build`
-- [ ] Auth works: `ticktick auth login`
-- [ ] All commands work: test add, list, search, update, complete, delete
-- [ ] Interactive modes work: `ticktick add`, `ticktick update <id>`
-- [ ] Short IDs work in all commands
-- [ ] MCP server starts without errors
-- [ ] README examples are accurate
+- [ ] CLI builds without errors: `npm run build`
+- [ ] MCP server builds without errors: `cd mcp-server && npm run build`
+- [ ] Authentication works: `ticktick auth login` and `ticktick auth status`
+- [ ] Config commands work: `ticktick config default set` (interactive), `ticktick config show`
+- [ ] Global default project fallback: test command from directory without `.ticktick` file
+- [ ] Three-tier resolution: test `--project` flag > `.ticktick` file > global default priority order
+- [ ] All CLI commands work: test `add`, `list`, `search`, `update`, `complete`, `delete`, `show`
+- [ ] Interactive modes work: `ticktick add`, `ticktick update <id>`, `ticktick config default set`
+- [ ] Short IDs work in all commands (first 8-12 chars)
+- [ ] Project context detection: test commands in directory with `.ticktick` file
+- [ ] MCP server starts: `cd mcp-server && npm run dev` (should not error)
+- [ ] MCP tools work: test in Claude Desktop with natural language
+- [ ] README and documentation examples are accurate
 
 ## Future Enhancements
 
