@@ -46,16 +46,25 @@ A command-line interface for managing TickTick tasks, designed for developer wor
 
    After this, you can use `ticktick` directly instead of `npm run dev --`
 
-5. **Create a `.env` file** (optional, to avoid entering credentials each time)
-   ```bash
-   cp .env.example .env
-   ```
+5. **Store OAuth credentials** (optional, to avoid entering them each time)
 
-   Edit `.env` and add your TickTick OAuth credentials:
-   ```
+   **Option A: Global credentials (recommended)**
+   ```bash
+   # Create ~/.ticktick/.env for all projects
+   cat > ~/.ticktick/.env << 'EOF'
    TICKTICK_CLIENT_ID=your_client_id_here
    TICKTICK_CLIENT_SECRET=your_client_secret_here
+   EOF
+   chmod 600 ~/.ticktick/.env
    ```
+
+   **Option B: Per-project credentials**
+   ```bash
+   cp .env.example .env
+   # Edit .env and add credentials
+   ```
+
+   Note: Local `.env` files take precedence over `~/.ticktick/.env`
 
 ## Getting OAuth Credentials
 
@@ -64,7 +73,7 @@ A command-line interface for managing TickTick tasks, designed for developer wor
 3. Create a new application
 4. Set the redirect URI to: `http://localhost:8080/callback`
 5. Copy your **Client ID** and **Client Secret**
-6. Add them to your `.env` file or use them with `--client-id` and `--client-secret` flags
+6. Store them in `~/.ticktick/.env` (global) or local `.env` file, or use `--client-id` and `--client-secret` flags
 
 ## Usage
 
@@ -447,7 +456,16 @@ npm start <command>
 
 - **Use short IDs**: Instead of typing full task IDs like `685cfca6f8a4910289264dc5`, you can use just the first 8 characters: `685cfca6`
 
-- **Store OAuth credentials in `.env`**: Avoid re-entering them by adding them to the `.env` file
+- **Store OAuth credentials globally**: Create `~/.ticktick/.env` to avoid entering credentials every time you authenticate:
+  ```bash
+  cat > ~/.ticktick/.env << 'EOF'
+  TICKTICK_CLIENT_ID=your_client_id
+  TICKTICK_CLIENT_SECRET=your_client_secret
+  EOF
+  chmod 600 ~/.ticktick/.env
+  ```
+
+- **Set a global default project**: Use `ticktick config default set` to work from any directory without `.ticktick` files
 
 - **Commit `.ticktick` files**: Consider committing `.ticktick` files to version control so team members can link to the same project
 

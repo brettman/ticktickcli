@@ -1,9 +1,14 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import dotenv from 'dotenv';
+import path from 'path';
+import os from 'os';
 import { ConfigManager } from '../lib/config.js';
 import { OAuthManager } from '../lib/auth.js';
 
+// Load from global ~/.ticktick/.env first, then local .env (which takes precedence)
+const globalEnvPath = path.join(os.homedir(), '.ticktick', '.env');
+dotenv.config({ path: globalEnvPath });
 dotenv.config();
 
 export const authCommand = new Command('auth')
@@ -21,7 +26,7 @@ authCommand
       let clientSecret = options.clientSecret || process.env.TICKTICK_CLIENT_SECRET || '';
 
       if (!clientId || !clientSecret) {
-        console.log(chalk.cyan('\nTip: Create a .env file with TICKTICK_CLIENT_ID and TICKTICK_CLIENT_SECRET to avoid entering these each time.\n'));
+        console.log(chalk.cyan('\nTip: Create ~/.ticktick/.env with TICKTICK_CLIENT_ID and TICKTICK_CLIENT_SECRET to avoid entering these each time.\n'));
 
         if (!clientId) {
           const readline = await import('readline');

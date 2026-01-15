@@ -179,6 +179,23 @@ cd mcp-server && npm run clean && npm run build && cd ..
   - API returns tasks wrapped in `{tasks: [...]}` format
   - OAuth callback server must be aggressively closed to prevent hanging
 
+### Authentication & Environment Variables
+
+**Credential Loading Order** (`src/commands/auth.ts`):
+1. Command-line flags: `--client-id`, `--client-secret`
+2. Global env file: `~/.ticktick/.env` (recommended for all projects)
+3. Local env file: `.env` in current directory (takes precedence)
+4. Interactive prompt if none found
+
+**Global .env file** (recommended):
+```bash
+~/.ticktick/.env
+TICKTICK_CLIENT_ID=...
+TICKTICK_CLIENT_SECRET=...
+```
+
+**Token Storage**: After authentication, tokens stored in `~/.ticktick/config` (not in .env files)
+
 ## Development Notes
 
 ### Project Structure
@@ -225,9 +242,11 @@ The CLI and MCP server share code via symbolic links:
 
 **Project Detection (`src/lib/project.ts`):**
 - `ProjectManager.getCurrentProjectContext()` - Traverses directory tree upward from cwd
-- Finds nearest `.ticktick` file (stops at first match or filesystem root)
+- `findTickTickFile()` - Searches upward, uses `fs.stat()` to verify `.ticktick` is a file (not directory)
+- Skips `.ticktick` directories during traversal to prevent EISDIR errors
 - `load()` validates `.ticktick` file format and returns parsed data
 - Used by both CLI and MCP for automatic project context
+- Falls back to global default project if no `.ticktick` file found
 
 **Config Management (`src/lib/config.ts`):**
 - `ConfigManager` handles `~/.ticktick/config` file
