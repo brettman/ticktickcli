@@ -73,10 +73,13 @@ export class ProjectManager {
       const ticktickPath = path.join(current, TICKTICK_FILE_NAME);
 
       try {
-        await fs.access(ticktickPath);
-        return ticktickPath;
+        const stat = await fs.stat(ticktickPath);
+        // Only return if it's a file, not a directory
+        if (stat.isFile()) {
+          return ticktickPath;
+        }
       } catch {
-        // File doesn't exist, continue up the tree
+        // File doesn't exist or error accessing it, continue up the tree
       }
 
       const parent = path.dirname(current);
@@ -106,8 +109,8 @@ export class ProjectManager {
   static async hasTickTickFile(directory: string): Promise<boolean> {
     const ticktickPath = path.join(directory, TICKTICK_FILE_NAME);
     try {
-      await fs.access(ticktickPath);
-      return true;
+      const stat = await fs.stat(ticktickPath);
+      return stat.isFile();
     } catch {
       return false;
     }
